@@ -21,13 +21,18 @@ jobs:
     if: startsWith(github.event.issue.title, 'loa|')
     steps:
     - name: Set env vars
+      env:
+        ISSUE_TITLE_IN: ${{ github.event.issue.title }}
       run: |
-        echo "REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
-        echo "EVENT_ISSUE_NUMBER=${{ github.event.issue.number }}" >> $GITHUB_ENV
-        echo "EVENT_USER_LOGIN=${{ github.event.issue.user.login }}" >> $GITHUB_ENV
-        echo "ISSUE_TITLE=${{ github.event.issue.title }}" >> $GITHUB_ENV
-        GAME_NUM=$(echo "${{ github.event.issue.title }}" | cut -d'|' -f4 || echo "1")
-        echo "GAME_NUM=${GAME_NUM}" >> $GITHUB_ENV
+        echo "REPOSITORY=$GITHUB_REPOSITORY" >> "$GITHUB_ENV"
+        echo "EVENT_ISSUE_NUMBER=${{ github.event.issue.number }}" >> "$GITHUB_ENV"
+        echo "EVENT_USER_LOGIN=${{ github.event.issue.user.login }}" >> "$GITHUB_ENV"
+        title_delim="ISSUE_TITLE_EOF_${RANDOM}${RANDOM}"
+        echo "ISSUE_TITLE<<$title_delim" >> "$GITHUB_ENV"
+        echo "$ISSUE_TITLE_IN" >> "$GITHUB_ENV"
+        echo "$title_delim" >> "$GITHUB_ENV"
+        GAME_NUM=$(printf '%s\n' "$ISSUE_TITLE_IN" | cut -d'|' -f4 || echo "1")
+        echo "GAME_NUM=${GAME_NUM}" >> "$GITHUB_ENV"
 
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -54,15 +59,17 @@ jobs:
         if echo "$OUTPUT" | grep -q "SUCCESS:"; then
           MESSAGE=$(echo "$OUTPUT" | grep "SUCCESS:" | sed 's/SUCCESS: //')
           echo "success=true" >> $GITHUB_OUTPUT
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          echo "$MESSAGE" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          delim="MESSAGE_EOF_${RANDOM}${RANDOM}"
+          echo "message<<$delim" >> "$GITHUB_OUTPUT"
+          echo "$MESSAGE" >> "$GITHUB_OUTPUT"
+          echo "$delim" >> "$GITHUB_OUTPUT"
         else
           ERROR=$(echo "$OUTPUT" | grep "ERROR:" | sed 's/ERROR: //' || echo "Could not process move")
           echo "success=false" >> $GITHUB_OUTPUT
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          echo "$ERROR" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          delim="MESSAGE_EOF_${RANDOM}${RANDOM}"
+          echo "message<<$delim" >> "$GITHUB_OUTPUT"
+          echo "$ERROR" >> "$GITHUB_OUTPUT"
+          echo "$delim" >> "$GITHUB_OUTPUT"
         fi
         exit $EXIT_CODE
 
@@ -80,15 +87,18 @@ jobs:
 
     - name: Set step outputs as env vars
       if: always()
+      env:
+        MOVE_MESSAGE_IN: ${{ steps.process_move.outputs.message }}
       run: |
         if [ -n "${{ steps.process_move.outputs.success }}" ]; then
           echo "MOVE_SUCCESS=${{ steps.process_move.outputs.success }}" >> $GITHUB_ENV
         else
           echo "MOVE_SUCCESS=false" >> $GITHUB_ENV
         fi
-        echo "MOVE_MESSAGE<<EOF" >> $GITHUB_ENV
-        echo "${{ steps.process_move.outputs.message }}" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
+        delim="MOVE_MESSAGE_EOF_${RANDOM}${RANDOM}"
+        echo "MOVE_MESSAGE<<$delim" >> "$GITHUB_ENV"
+        echo "$MOVE_MESSAGE_IN" >> "$GITHUB_ENV"
+        echo "$delim" >> "$GITHUB_ENV"
 
     - name: Comment on issue
       if: always()
@@ -138,10 +148,10 @@ jobs:
         git config --global user.email "action@github.com"
         git config --global user.name "GitHub Action"
         git add loa_games/*.pgn loa_games/*.txt README.md
-        if echo "${{ env.ISSUE_TITLE }}" | grep -q "loa|new"; then
-          git commit -m "${{ env.EVENT_USER_LOGIN }} new game" || exit 0
+        if printf '%s\n' "$ISSUE_TITLE" | grep -q "loa|new"; then
+          git commit -m "$EVENT_USER_LOGIN new game" || exit 0
         else
-          MOVE_STR=$(echo "${{ env.ISSUE_TITLE }}" | cut -d'|' -f3)
-          git commit -m "${{ env.EVENT_USER_LOGIN }} move $MOVE_STR" || exit 0
+          MOVE_STR=$(printf '%s\n' "$ISSUE_TITLE" | cut -d'|' -f3)
+          git commit -m "$EVENT_USER_LOGIN move $MOVE_STR" || exit 0
         fi
         git push || exit 0
